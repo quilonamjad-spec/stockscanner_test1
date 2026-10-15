@@ -205,6 +205,41 @@ def analyze(sym, tf):
 
 
 # ---------------------------------------------------------------- UI
+
+GREEN, RED, AMBER, NAVY, GREY, TRACK = "#2F8F6F", "#CF3F2A", "#D99A00", "#4F7CAC", "#6B7889", "#3A4658"
+
+def chip(text, color):
+    fg = "#1b1500" if color == AMBER else "#fff"
+    return (f"<span style='display:inline-block;background:{color};color:{fg};font-weight:600;font-size:13px;"
+            f"padding:3px 11px;border-radius:99px;margin:0 6px 6px 0'>{text}</span>")
+
+def chips(r):
+    v = {"Overextended": RED, "Stretched": AMBER, "Oversold": NAVY}.get(r["verdict"], GREEN)
+    a = {"Buy area": GREEN, "Sell area": RED, "Wait for dip": AMBER}.get(r["area"], GREY)
+    arrow = {"Up": "↑", "Down": "↓"}.get(r["direction"], "↔")
+    o = r["outlook"]
+    oc = (NAVY if ("Breakout likely" in o or "ontinuation" in o) else AMBER if "watch" in o or "possible" in o
+          else GREY if "Range" in o else GREEN if "Bounce" in o else RED)
+    return chip(r["verdict"], v) + chip(f"{r['area']} {arrow}", a) + chip(o, oc)
+
+def dots(signals, good_high):
+    """One bar segment per signal. good_high=True: high score = green (breakout). False: high score = red (pullback)."""
+    hi, lo = (GREEN, RED) if good_high else (RED, GREEN)
+    segs = "".join(f"<div style='flex:1;height:8px;border-radius:2px;background:"
+                   f"{hi if x['score'] >= .6 else lo if x['score'] <= .3 else TRACK}'></div>" for x in signals)
+    return f"<div style='display:flex;gap:4px;margin:4px 0 12px'>{segs}</div>"
+
+def sig_table(signals, good_high):
+    hi, lo = (GREEN, RED) if good_high else (RED, GREEN)
+    rows = "".join(
+        f"<tr><td style='padding:5px 4px;border-bottom:1px solid #3A4658'>"
+        f"<span style='display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:"
+        f"{hi if x['score'] >= .6 else lo if x['score'] <= .3 else AMBER}'></span>{x['name']}<br>"
+        f"<small style='opacity:.65'>{x['note']}</small></td>"
+        f"<td style='padding:5px 4px;border-bottom:1px solid #3A4658;text-align:right;white-space:nowrap'>{x['value']}</td></tr>"
+        for x in signals)
+    return f"<table style='width:100%;border-collapse:collapse;font-size:13px'>{rows}</table>"
+
 def card(r):
     if "error" in r:
         st.error(f"**{r['symbol']}** - {r['error']}")
@@ -213,7 +248,7 @@ def card(r):
         a, b = st.columns([3, 2])
         a.subheader(r["symbol"])
         b.markdown(f"<div style='text-align:right'>₹{r['price']} · ATR {r['atr']}</div>", unsafe_allow_html=True)
-        st.markdown(f"**{r['verdict']}** · **{r['area']}** · **{r['outlook']}**")
+        st.markdown(chips(r), unsafe_allow_html=True)
         st.caption(r["why"])
         pos = max(0, min(100, 50 + r["stretch"] / 3 * 50))
         st.markdown(
@@ -231,7 +266,9 @@ def card(r):
         c[2].metric("Breakout odds", f"{r['bk_prob']}%")
         c[3].metric("Confidence", r["confidence"])
         st.write(f"Pullback signals: **{r['pb_warn']}** of {r['pb_total']} warn, {r['pb_calm']} calm")
+        st.markdown(dots(r["signals"], False), unsafe_allow_html=True)
         st.write(f"Breakout signals: **{r['bk_support']}** of {r['bk_total']} support, {r['bk_against']} against")
+        st.markdown(dots(r["bk_signals"], True), unsafe_allow_html=True)
         st.caption(f"Confidence is based on the {r['conf_basis']}.")
         if r["direction"] == "Up":
             z = r["up_zones"]; st.write(f"RSI **{r['rsi']}** · If it bounces: 20 EMA **{z['ema20']}**, +1 ATR **{z['plus1atr']}**, +2 ATR **{z['plus2atr']}**")
@@ -245,10 +282,10 @@ def card(r):
         hist = f"{r['hist_hit']}% ({r['hist_n']} past cases)" if r["hist_n"] >= 8 else f"too few past cases ({r['hist_n']})"
         st.caption(f"History check: {hist}. Rule-based odds {r['model_prob']}%. Data: {r['bars']} candles, latest {r['last_bar']}.")
         with st.expander("All signals"):
-            st.markdown("**Pullback signals** (score >= 0.6 warns)")
-            st.dataframe(pd.DataFrame(r["signals"]), hide_index=True, use_container_width=True)
-            st.markdown("**Breakout signals** (score >= 0.6 supports)")
-            st.dataframe(pd.DataFrame(r["bk_signals"]), hide_index=True, use_container_width=True)
+            st.markdown("**Pullback signals** (red = warns, green = calm)")
+            st.markdown(sig_table(r["signals"], False), unsafe_allow_html=True)
+            st.markdown("**Breakout signals** (green = supports, red = against)")
+            st.markdown(sig_table(r["bk_signals"], True), unsafe_allow_html=True)
 
 def main():
     st.set_page_config(page_title="Stretch Monitor", layout="wide")
